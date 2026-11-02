@@ -142,7 +142,7 @@ function DetailBody({
         : 'Raw';
 
   return (
-    <div className="stack">
+    <div className="stack has-dock">
       {message ? (
         <p className="banner info" role="status">
           {message}

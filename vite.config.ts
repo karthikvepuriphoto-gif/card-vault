@@ -29,6 +29,8 @@ export default defineConfig({
         ],
       },
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/_/, /\/[^/?]+\.[^/]+$/],
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,webmanifest}'],
@@ -40,25 +42,6 @@ export default defineConfig({
             options: {
               cacheName: 'card-vault-ocr',
               expiration: { maxEntries: 16, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/api\.pokemontcg\.io\/v2\/cards.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'card-vault-pokemon-prices',
-              networkTimeoutSeconds: 20,
-              expiration: { maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 7 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/images\.pokemontcg\.io\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'card-vault-pokemon-images',
-              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
               cacheableResponse: { statuses: [0, 200] },
             },
           },

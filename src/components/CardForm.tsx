@@ -190,6 +190,13 @@ export function CardForm({
             ))}
           </div>
         </fieldset>
+        <PricePanel
+          ref={priceRef}
+          subject={draft}
+          price={draft}
+          quantity={draft.quantity}
+          onCommit={(next) => onChange({ ...draft, ...next })}
+        />
         <fieldset className="field">
           <legend>Condition</legend>
           <div className="chips wrap" role="radiogroup" aria-label="Condition">
@@ -275,13 +282,6 @@ export function CardForm({
           Purchase price
           <input inputMode="decimal" autoComplete="off" value={paid} placeholder="Optional" onChange={(event) => setPaid(event.target.value)} />
         </label>
-        <PricePanel
-          ref={priceRef}
-          subject={draft}
-          price={draft}
-          quantity={draft.quantity}
-          onCommit={(next) => onChange({ ...draft, ...next })}
-        />
         <label className="field">
           Where it lives
           <input

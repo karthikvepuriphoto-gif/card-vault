@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router-dom';
 import { useCollection } from '../collection';
 import { CardForm } from '../components/CardForm';
+import { PriceDock } from '../components/EbaySoldLink';
 import { Modal } from '../components/Modal';
 import { PhotoSlot } from '../components/PhotoSlot';
 import { applyOcr, emptyDraft, ocrFoundSomething } from '../lib/draft';
@@ -93,7 +94,7 @@ export function AddPage() {
   }
 
   return (
-    <div className="stack">
+    <div className="stack has-dock">
       {stage === 'capture' ? (
         <section className="capture">
           <h1>Add a card</h1>
@@ -180,6 +181,7 @@ export function AddPage() {
           />
         </section>
       ) : null}
+      {stage !== 'review' ? <PriceDock card={draft} /> : null}
       {blocker.state === 'blocked' ? (
         <Modal title="Leave without saving?" onClose={() => blocker.reset()}>
           <p>This card isn't saved on the iPad yet.</p>
