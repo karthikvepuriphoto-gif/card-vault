@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { bestPrice, buildPokemonQueries, choicesFromPrices, normalizePokemonCard } from './pokemon';
+import { bestPrice, buildPokemonQueries, choicesFromPrices, cleanPokemonQueryName, normalizePokemonCard } from './pokemon';
 
 describe('pokémon prices', () => {
-  it('builds a strict query and a name-only fallback', () => {
-    const queries = buildPokemonQueries({ name: 'Charizard', setName: 'Base', cardNumber: '4/102' });
-    expect(queries[0]).toBe('name:charizard number:4 set.name:base');
-    expect(queries).toContain('name:charizard number:4');
-    expect(queries.at(-1)).toBe('name:charizard');
+  it('strips HP and extra card text before searching', () => {
+    expect(cleanPokemonQueryName('Pikachu HP 60')).toBe('Pikachu');
+    expect(cleanPokemonQueryName('Charizard HP 120')).toBe('Charizard');
+    expect(cleanPokemonQueryName('Pikachu 58/102 weakness')).toBe('Pikachu');
+  });
+
+  it('searches the cleaned name, then a prefix, and never sends HP', () => {
+    const queries = buildPokemonQueries({ name: 'Charizard HP 120', setName: 'Base', cardNumber: '4/102' });
+    expect(queries[0]).toBe('name:charizard number:4');
+    expect(queries).toContain('name:charizard');
+    expect(queries).toContain('name:charizard*');
+    expect(queries.join(' ')).not.toContain('hp');
   });
 
   it('prefers the market price', () => {

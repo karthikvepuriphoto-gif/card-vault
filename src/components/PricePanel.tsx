@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from 'react';
 import type { CardIdentity, PriceInfo } from '../types';
 import { formatDate, isValueStale } from '../lib/dates';
-import { ebaySoldSearchUrl, openExternal } from '../lib/ebay';
+import { EbaySoldLink, PriceDock } from './EbaySoldLink';
 import { formatMoney, moneyInputValue, parseMoney, roundMoney } from '../lib/money';
 import {
   bestPrice,
@@ -179,25 +179,18 @@ export const PricePanel = forwardRef<
           type="button"
           className="btn primary"
           onClick={() => void (price.pokemonCardId ? refresh() : setPickerOpen(true))}
-          disabled={busy != null || (!subject.name.trim() && !price.pokemonCardId)}
+          disabled={busy != null}
         >
-          {busy === 'refresh' ? 'Checking TCGplayer…' : price.pokemonCardId ? 'Refresh Pokémon price' : 'Look up Pokémon price'}
+          {busy === 'refresh' ? 'Checking TCGplayer…' : price.pokemonCardId ? 'Refresh Pokémon price' : 'Find Pokémon price'}
         </button>
       ) : null}
-      {showPokemon && !subject.name.trim() && !price.pokemonCardId ? (
-        <p className="hint">Add the Pokémon's name first.</p>
-      ) : null}
-      <button
-        type="button"
-        className="btn ghost"
-        onClick={() => {
+      <EbaySoldLink
+        card={subject}
+        onOpen={() => {
           setEbayArmed(true);
-          setInfo('When you find a sold price, type it below and tap Use this price.');
-          openExternal(ebaySoldSearchUrl(subject));
+          setInfo('Sold listings open in Safari. Type the price you want to keep, then tap Use this price.');
         }}
-      >
-        Check sold prices
-      </button>
+      />
       <label className="field">
         Type a price
         <input
@@ -249,10 +242,21 @@ export const PricePanel = forwardRef<
           initialName={subject.name}
           setName={subject.setName}
           cardNumber={subject.cardNumber}
+          ebayCard={subject}
           onClose={() => setPickerOpen(false)}
           onPick={pickPokemon}
         />
       ) : null}
+      {pickerOpen ? null : (
+        <PriceDock
+          card={subject}
+          onOpenEbay={() => {
+            setEbayArmed(true);
+            setInfo('Sold listings open in Safari. Type the price you want to keep, then tap Use this price.');
+          }}
+          onFindPokemon={showPokemon ? () => setPickerOpen(true) : undefined}
+        />
+      )}
     </section>
   );
 });

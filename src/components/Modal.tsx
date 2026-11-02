@@ -27,6 +27,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
         tabIndex={-1}
         ref={dialogRef}
         onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => event.stopPropagation()}
       >
         <header className="modal-head">
           <h2>{title}</h2>

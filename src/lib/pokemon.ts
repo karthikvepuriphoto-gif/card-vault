@@ -44,6 +44,10 @@ export function bestPrice(choice: PriceChoice): number | null {
   return choice.market ?? choice.mid;
 }
 
+function hasListedPrice(card: PokemonCardSummary): boolean {
+  return card.choices.some((choice) => bestPrice(choice) != null);
+}
+
 function asPrice(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -88,49 +92,124 @@ export function normalizePokemonCard(input: unknown): PokemonCardSummary | null 
   };
 }
 
+const NAME_NOISE = new Set([
+  'hp',
+  'lv',
+  'level',
+  'pokemon',
+  'basic',
+  'stage',
+  'weakness',
+  'resistance',
+  'retreat',
+  'evolves',
+  'from',
+  'illus',
+  'illustrator',
+  'trainer',
+  'energy',
+  'attack',
+]);
+
 function pokemonTokens(value: string): string[] {
   return value
     .toLowerCase()
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .split(/[^a-z0-9]+/)
-    .filter((part) => part.length > 0);
+    .filter((part) => part.length > 1 && !NAME_NOISE.has(part));
+}
+
+/** Drop HP, card fractions, and other words OCR copies off the card face. */
+export function cleanPokemonQueryName(raw: string): string {
+  const stripped = raw
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\bhp\s*\d+\b/gi, ' ')
+    .replace(/\b\d+\s*\/\s*\d+\b/g, ' ')
+    .replace(/\b(19|20)\d{2}\b/g, ' ')
+    .replace(/[^A-Za-z\s'-]/g, ' ');
+  return stripped
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 1 && !NAME_NOISE.has(word.toLowerCase()))
+    .join(' ');
 }
 
 export function buildPokemonQueries(input: { name: string; setName: string; cardNumber: string }): string[] {
-  const nameParts = pokemonTokens(input.name);
-  const setToken = pokemonTokens(input.setName)[0] ?? '';
+  const tokens = pokemonTokens(cleanPokemonQueryName(input.name));
+  const primary = [...tokens].sort((a, b) => b.length - a.length)[0] ?? '';
+  const setToken = pokemonTokens(input.setName).find((token) => token.length >= 3) ?? '';
   const number = input.cardNumber.split('/')[0]?.trim().replace(/[^\w-]/g, '') ?? '';
-  if (nameParts.length === 0) return [];
-  const nameQuery = nameParts.map((part) => `name:${part}`).join(' ');
-  const setQuery = setToken ? `set.name:${setToken}` : '';
+  if (!primary) return [];
   const queries: string[] = [];
-  if (number && setQuery) queries.push(`${nameQuery} number:${number} ${setQuery}`);
-  if (number) queries.push(`${nameQuery} number:${number}`);
-  if (setQuery) queries.push(`${nameQuery} ${setQuery}`);
-  queries.push(nameQuery);
-  return [...new Set(queries)];
+  if (number) queries.push(`name:${primary} number:${number}`);
+  if (tokens.length > 1) queries.push(tokens.map((token) => `name:${token}`).join(' '));
+  queries.push(`name:${primary}`);
+  if (primary.length >= 4) queries.push(`name:${primary}*`);
+  if (setToken) queries.push(`name:${primary} set.name:${setToken}`);
+  return [...new Set(queries)].slice(0, 5);
 }
 
 export function isAbortError(err: unknown): boolean {
   return (err instanceof DOMException && err.name === 'AbortError') || (err instanceof Error && err.name === 'AbortError');
 }
 
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('The lookup was cancelled.', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('The lookup was cancelled.', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function fetchCards(url: URL, signal: AbortSignal): Promise<Response> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), 8000);
+  const onAbort = () => timeout.abort();
+  signal.addEventListener('abort', onAbort);
+  try {
+    return await fetch(url, { signal: timeout.signal, headers: { Accept: 'application/json' } });
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+  }
+}
+
 async function searchOnce(query: string, signal: AbortSignal): Promise<PokemonCardSummary[]> {
   const url = new URL(API);
   url.searchParams.set('q', query);
-  url.searchParams.set('pageSize', '12');
-  let response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-  if (response.status >= 500) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  url.searchParams.set('pageSize', '16');
+  let lastError: Error = new Error('HTTP 503');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     if (signal.aborted) throw new DOMException('The lookup was cancelled.', 'AbortError');
-    response = await fetch(url, { signal, headers: { Accept: 'application/json' } });
+    try {
+      const response = await fetchCards(url, signal);
+      if (response.status === 400 || response.status === 404) return [];
+      if (response.ok) {
+        const body = (await response.json()) as { data?: unknown };
+        if (!Array.isArray(body.data)) return [];
+        return body.data.map(normalizePokemonCard).filter((card): card is PokemonCardSummary => card != null);
+      }
+      lastError = new Error(`HTTP ${response.status}`);
+      if (response.status < 500) throw lastError;
+    } catch (err) {
+      if (signal.aborted) throw err;
+      lastError = err instanceof Error ? err : lastError;
+    }
+    if (attempt < 2) await wait(400 * (attempt + 1), signal);
   }
-  if (response.status === 400 || response.status === 404) return [];
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const body = (await response.json()) as { data?: unknown };
-  if (!Array.isArray(body.data)) return [];
-  return body.data.map(normalizePokemonCard).filter((card): card is PokemonCardSummary => card != null);
+  throw lastError;
 }
 
 export async function fetchPokemonCards(queries: string[], signal: AbortSignal): Promise<PokemonCardSummary[]> {
@@ -141,7 +220,9 @@ export async function fetchPokemonCards(queries: string[], signal: AbortSignal):
     if (signal.aborted) throw new DOMException('The lookup was cancelled.', 'AbortError');
     try {
       const cards = await searchOnce(query, signal);
-      if (cards.length > 0) return cards;
+      if (cards.length > 0) {
+        return cards.sort((a, b) => Number(hasListedPrice(b)) - Number(hasListedPrice(a)));
+      }
     } catch (err) {
       if (isAbortError(err)) throw err;
       if (err instanceof TypeError) sawNetworkError = true;
@@ -149,10 +230,10 @@ export async function fetchPokemonCards(queries: string[], signal: AbortSignal):
     }
   }
   if (sawNetworkError) {
-    throw new Error("Couldn't reach the Pokémon price list. Check the connection, or type a price from sold listings.");
+    throw new Error("Couldn't reach the Pokémon price list. Check the connection, try again, or use the eBay link.");
   }
   if (sawServerError) {
-    throw new Error('The Pokémon price list is busy right now. Try again in a moment, or type a price.');
+    throw new Error('The Pokémon price list is busy right now. Try again in a moment, or use the eBay link.');
   }
   return [];
 }
